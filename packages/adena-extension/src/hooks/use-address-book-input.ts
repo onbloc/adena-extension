@@ -6,6 +6,7 @@ import { formatAddress, formatNickname } from '@common/utils/client-utils';
 import { useNetwork } from './use-network';
 import { addressValidationCheck } from '@common/utils/client-utils';
 import { useAccountName } from './use-account-name';
+import useDNSResolver from './use-dns';
 
 export type UseAddressBookInputHookReturn = {
   opened: boolean;
@@ -21,7 +22,7 @@ export type UseAddressBookInputHookReturn = {
     name: string;
     description: string;
   }[];
-  resultAddress: string;
+  resultAddress: Promise<string>;
   setSelected: (selected: boolean) => void;
   setSelectedAddressBook: (selectedAddressBook: AddressBookItem | null) => void;
   setAddress: (address: string) => void;
@@ -29,7 +30,7 @@ export type UseAddressBookInputHookReturn = {
   onClickInputIcon: (selected: boolean) => void;
   onChangeAddress: (address: string) => void;
   onClickAddressBook: (addressBookId: string) => void;
-  validateAddressBookInput: () => boolean;
+  validateAddressBookInput: () => Promise<boolean>;
   validateEqualAddress: () => Promise<boolean>;
 };
 
@@ -53,6 +54,7 @@ export const useAddressBookInput = (): UseAddressBookInputHookReturn => {
       description: string;
     }[]
   >([]);
+  const { resolveDomainToAddress, result } = useDNSResolver();
 
   const updateAddressBook = async (): Promise<void> => {
     const addressBooks = await addressBookService.getAddressBook();
@@ -104,12 +106,29 @@ export const useAddressBookInput = (): UseAddressBookInputHookReturn => {
     };
   }, [selectedAddressBook]);
 
-  const getResultAddress = useCallback(() => {
+  const getResultAddress = useCallback(async () => {
+    if (address.endsWith('.gno')) {
+      const resolvedAddress = await resolveDomainToAddress(address);
+      if (resolvedAddress)
+        return resolvedAddress;
+    }
     if (selected) {
       return selectedAddressBook?.address ?? '';
     }
     return address;
-  }, [selected, selectedAddressBook, address]);
+  }, [resolveDomainToAddress, selected, selectedAddressBook, address]);
+
+  // useEffect(() => {
+  //   const resolveAddress = async () => {
+  //     if (address.endsWith('.gno')) {
+  //       console.log(address)
+  //       await resolveDomainToAddress(address);
+  //       console.log(result?.address)
+  //       setAddress(result?.address || address)
+  //     }
+  //   };
+  //   resolveAddress();
+  // }, [resolveDomainToAddress, getResultAddress, address, result]);
 
   const onClickInputIcon = useCallback(
     (selected: boolean) => {
@@ -127,7 +146,7 @@ export const useAddressBookInput = (): UseAddressBookInputHookReturn => {
 
   const onChangeAddress = useCallback(
     (address: string) => {
-      const regex = /^[a-zA-Z0-9]*$/;
+      const regex = /^[a-zA-Z0-9.]*$/;
       if (!regex.test(address)) {
         return;
       }
@@ -169,8 +188,8 @@ export const useAddressBookInput = (): UseAddressBookInputHookReturn => {
     [addressBooks, wallet?.accounts],
   );
 
-  const validateAddressBookInput = useCallback(() => {
-    const address = getResultAddress();
+  const validateAddressBookInput = useCallback(async () => {
+    const address = await getResultAddress();
     if (!addressValidationCheck(address)) {
       setHasError(true);
       setErrorMessage('Invalid Address');
@@ -178,10 +197,10 @@ export const useAddressBookInput = (): UseAddressBookInputHookReturn => {
     }
     clearError();
     return true;
-  }, [selected, selectedAddressBook, address]);
+  }, [resolveDomainToAddress, result, selected, selectedAddressBook, address]);
 
   const validateEqualAddress = useCallback(async () => {
-    const address = getResultAddress();
+    const address = await getResultAddress();
     const currentAddress = await getCurrentAddress(currentNetwork?.addressPrefix);
     if (address === currentAddress) {
       setHasError(true);
