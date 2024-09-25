@@ -72,15 +72,25 @@ export const removePopups = async (): Promise<void> => {
 export const checkEstablished = async (
   requestData: InjectionMessage,
   sendResponse: (response: any) => void,
+  sendSuccessResponse = false,
 ): Promise<boolean> => {
   const core = new InjectCore();
   const accountId = await core.getCurrentAccountId();
-
+  const isLocked = await core.walletService.isLocked();
   const siteName = getSiteName(requestData.protocol, requestData.hostname);
+
+  if (isLocked) {
+    sendResponse(InjectionMessageInstance.failure('WALLET_LOCKED', {}, requestData.key))
+    return false
+  }
+
   const isEstablished = await core.establishService.isEstablishedBy(accountId, siteName);
   if (!isEstablished) {
     sendResponse(InjectionMessageInstance.failure('NOT_CONNECTED', {}, requestData.key));
     return false;
+  }
+  if (sendSuccessResponse) {
+    sendResponse(InjectionMessageInstance.success('ALREADY_CONNECTED', {}, requestData.key))
   }
   return true;
 };
